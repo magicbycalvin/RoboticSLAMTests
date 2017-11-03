@@ -18,8 +18,18 @@
 
 #include <Wire.h>
 #include <Zumo32U4.h>
-//#include <MahonyAHRS.h>
 
+#define DEBUG
+#ifdef DEBUG
+  #define DBprint(x) Serial.print(x)
+  #define DBprintln(x) Serial.println(x)
+#else
+  #define DBprint(x)
+  #define DBprintln(x)
+#endif
+
+// Serial communication baud rate
+#define BAUD 115200
 // Length from one track to the other in mm from the Pololu website
 #define WHEEL_BASE 98
 // Constant to convert encoder ticks to mm traveled, the equation used was:
@@ -31,6 +41,11 @@
 #define TICK2MM 0.198449
 // Sample time in ms for all filter and control loops
 #define TS 1
+// Linear acceleration sensitivity for FS = +/- 2 G 
+// Comes from LSM303D datasheet, (mG/LSB)
+#define LA_So 0.061
+// Converts mGs to mm/s^2
+#define mG2MM 9.81
 
 Zumo32U4LCD lcd;
 Zumo32U4Encoders encoders;
@@ -40,19 +55,33 @@ Zumo32U4ProximitySensors proxSensors;
 LSM303 compass;
 L3G gyro;
 
-//Mahony filter;
-
 // Encoder Odometry
 float encDistance, encTheta;
 
-// IMU Odometry
-//float roll, pitch, yaw;
+// Save all IMU data into one struct
+typedef struct {
+  float gx;
+  float gy;
+  float gz;
+  float ax;
+  float ay;
+  float az;
+  float mx;
+  float my;
+  float mz;
+} IMUStruct;
+IMUStruct IMU;
 
 // Timing
 uint16_t lastTime = 0;
 uint16_t curTime = 0;
+uint16_t dt;
 
 void setup() {
+  #ifdef DEBUG
+    Serial.begin(BAUD);
+  #endif
+  
   Wire.begin();
   initializeIMU( &compass, &gyro );
   lineSensors.initThreeSensors();
@@ -61,16 +90,18 @@ void setup() {
 
 void loop() {
 
-  curTime = micros();
-  if ( curTime - lastTime > TS*1000 ) {
+  curTime = millis();
+  dt = curTime - lastTime;
+  if ( dt > TS ) {
     updateEncoderOdometry( &encoders, &encDistance, &encTheta );
-    //updateIMUOdometry( &compass, &gyro, &filter, &roll, &pitch, &yaw );
-    updateIMUOdometry( &compass, &gyro );
-//    Serial.print(roll);
-//    Serial.print('\t');
-//    Serial.print(pitch);
-//    Serial.print('\t');
-//    Serial.println(yaw);
+    updateIMUOdometry( &compass, &gyro, &IMU );
+    DBprint(IMU.ax);
+    DBprint('\t');
+    DBprint(dt);
+    DBprint('\t');
+    DBprint(compass.a.x*LA_So*mG2MM*dt*dt);
+    DBprint('\t');
+    DBprintln(encDistance);
     lastTime = curTime;
   }
   
@@ -127,32 +158,48 @@ void updateEncoderOdometry( Zumo32U4Encoders *encoders, float *encDistance, floa
  * Reads the compass and gyro data and then passes it through the Mahony
  * filter in order to produce a filtered result.
  */
-//void updateIMUOdometry( LSM303 *compass, L3G *gyro, Mahony *filter,
-//  float *roll, float *pitch, float *yaw ) {
-void updateIMUOdometry( LSM303 *compass, L3G *gyro ) {
-
-  float gx, gy, gz, ax, ay, az, mx, my, mz;
+void updateIMUOdometry( LSM303 *compass, L3G *gyro, IMUStruct *IMU ) {
 
   compass->read();
   gyro->read();
 
-  gx = gyro->g.x;
-  gy = gyro->g.y;
-  gz = gyro->g.z;
-  ax = compass->a.x;
-  ay = compass->a.y;
-  az = compass->a.z;
-  mx = compass->m.x;
-  my = compass->m.y;
-  mz = compass->m.z;
-  
-  /*
-  filter->updateIMU( gx, gy, gz, ax, ay, az );
-
-  *roll = filter->getRoll();
-  *pitch = filter->getPitch();
-  *yaw = filter->getYaw();
-   */
+  IMU->gx = gyro->g.x;
+  IMU->gy = gyro->g.y;
+  IMU->gz = gyro->g.z;
+  IMU->ax = compass->a.x;
+  IMU->ay = compass->a.y;
+  IMU->az = compass->a.z;
+  IMU->mx = compass->m.x;
+  IMU->my = compass->m.y;
+  IMU->mz = compass->m.z;
   
 }
+
+/*
+ * compFilter
+ * 
+ * 
+ */
+float distCompFilt( float accel, float encoder, uint16_t dt ) {
+
+  float accelDist = accel*LA_So*mG2MM/(dt*1000.0);
+  return;
+  
+}
+
+float rotCompFilt( float gyro, float magnometer, float encoderTheta ) {
+
+  return;
+  
+}
+
+
+
+
+
+
+
+
+
+ 
 
